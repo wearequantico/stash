@@ -289,7 +289,7 @@ class Redis extends AbstractDriver
             //b. :pathdb::cache:::name0:::sub
             $pathKey = ':pathdb::' . $keyString;
             //custom quantico
-			$pathKey = md5($pathKey);
+			//$pathKey = md5($pathKey);
 			$pathKey = $pathKey;
 
             if (isset($this->keyCache[$pathKey])) {
