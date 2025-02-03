@@ -12,6 +12,7 @@
 namespace Stash;
 
 use Psr\Cache\CacheItemInterface;
+use Psr\Log\LoggerInterface;
 use Stash\Exception\InvalidArgumentException;
 use Stash\Driver\Ephemeral;
 use Stash\Interfaces\DriverInterface;
@@ -52,7 +53,7 @@ class Pool implements PoolInterface
      * If set various then errors and exceptions will get passed to the PSR Compliant logging library. This
      * can be set using the setLogger() function in this class.
      *
-     * @var Psr\Log\LoggerInterface
+     * @var \Psr\Log\LoggerInterface
      */
     protected $logger;
 
@@ -64,13 +65,34 @@ class Pool implements PoolInterface
     protected $namespace;
 
     /**
+     * The default cache invalidation method for items created by this pool object.
+     *
+     * @var int
+     */
+    protected $invalidationMethod = Invalidation::PRECOMPUTE;
+
+    /**
+     * Argument 1 for the default cache invalidation method
+     *
+     * @var mixed
+     */
+    protected $invalidationArg1 = null;
+
+    /**
+     * Argument 2 for the default cache invalidation method
+     *
+     * @var mixed
+     */
+    protected $invalidationArg2 = null;
+
+    /**
      * The constructor takes a Driver class which is used for persistent
      * storage. If no driver is provided then the Ephemeral driver is used by
      * default.
      *
      * @param DriverInterface $driver
      */
-    public function __construct(DriverInterface $driver = null)
+    public function __construct(?DriverInterface $driver = null)
     {
         if (isset($driver)) {
             $this->setDriver($driver);
@@ -82,7 +104,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function setItemClass($class)
+    public function setItemClass(string $class): bool
     {
         if (!class_exists($class)) {
             throw new InvalidArgumentException('Item class ' . $class . ' does not exist');
@@ -102,7 +124,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function getItem($key)
+    public function getItem(string $key): CacheItemInterface
     {
         $keyString = trim($key, '/');
         $key = explode('/', $keyString);
@@ -120,6 +142,7 @@ class Pool implements PoolInterface
         $item = new $this->itemClass();
         $item->setPool($this);
         $item->setKey($key, $namespace);
+        $item->setInvalidationMethod($this->invalidationMethod, $this->invalidationArg1, $this->invalidationArg2);
 
         if ($this->isDisabled) {
             $item->disable();
@@ -135,7 +158,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function getItems(array $keys = array())
+    public function getItems(array $keys = array()): iterable
     {
         // temporarily cheating here by wrapping around single calls.
 
@@ -151,7 +174,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function hasItem($key)
+    public function hasItem(string $key): bool
     {
         return $this->getItem($key)->isHit();
     }
@@ -159,7 +182,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function save(CacheItemInterface $item)
+    public function save(CacheItemInterface $item): bool
     {
         return $item->save();
     }
@@ -167,7 +190,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function saveDeferred(CacheItemInterface $item)
+    public function saveDeferred(CacheItemInterface $item): bool
     {
         return $this->save($item);
     }
@@ -175,7 +198,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function commit()
+    public function commit(): bool
     {
         return true;
     }
@@ -184,7 +207,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function deleteItems(array $keys)
+    public function deleteItems(array $keys): bool
     {
         // temporarily cheating here by wrapping around single calls.
         $results = true;
@@ -199,7 +222,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function deleteItem($key)
+    public function deleteItem(string $key): bool
     {
         return $this->getItem($key)->clear();
     }
@@ -208,7 +231,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function clear()
+    public function clear(): bool
     {
         if ($this->isDisabled) {
             return false;
@@ -236,7 +259,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function purge()
+    public function purge(): bool
     {
         if ($this->isDisabled) {
             return false;
@@ -257,7 +280,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function setDriver(DriverInterface $driver)
+    public function setDriver(DriverInterface $driver): void
     {
         $this->driver = $driver;
     }
@@ -265,7 +288,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function getDriver()
+    public function getDriver(): DriverInterface
     {
         return $this->driver;
     }
@@ -273,7 +296,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function setNamespace($namespace = null)
+    public function setNamespace(?string $namespace = null): bool
     {
         if (is_null($namespace)) {
             $this->namespace = null;
@@ -293,7 +316,7 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function getNamespace()
+    public function getNamespace(): bool|string
     {
         return isset($this->namespace) ? $this->namespace : false;
     }
@@ -301,9 +324,24 @@ class Pool implements PoolInterface
     /**
      * {@inheritdoc}
      */
-    public function setLogger($logger)
+    public function setLogger(LoggerInterface $logger): bool
     {
         $this->logger = $logger;
+
+        return true;
+    }
+
+    /**
+     * {@inheritdoc}
+     */
+    public function setInvalidationMethod(
+        int $invalidation = Invalidation::PRECOMPUTE,
+        mixed $arg = null,
+        mixed $arg2 = null
+    ): bool {
+        $this->invalidationMethod = $invalidation;
+        $this->invalidationArg1 = $arg;
+        $this->invalidationArg2 = $arg2;
 
         return true;
     }
@@ -315,7 +353,7 @@ class Pool implements PoolInterface
      * @param  \Exception $exception
      * @return bool
      */
-    protected function logException($message, $exception)
+    protected function logException(string $message, \Exception $exception): bool
     {
         if (!isset($this->logger)) {
             return false;

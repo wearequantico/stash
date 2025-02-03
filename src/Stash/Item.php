@@ -13,6 +13,7 @@ namespace Stash;
 
 use Stash\Exception\Exception;
 use Stash\Exception\InvalidArgumentException;
+use Stash\Exception\ItemKeyMissingException;
 use Stash\Interfaces\DriverInterface;
 use Stash\Interfaces\ItemInterface;
 use Stash\Interfaces\PoolInterface;
@@ -78,7 +79,7 @@ class Item implements ItemInterface
     /**
      * Invalidation method
      *
-     * @var string
+     * @var int
      */
     protected $invalidationMethod = Invalidation::PRECOMPUTE;
 
@@ -160,7 +161,7 @@ class Item implements ItemInterface
      *
      * @param \Stash\Interfaces\PoolInterface $pool
      */
-    public function setPool(PoolInterface $pool)
+    public function setPool(PoolInterface $pool): void
     {
         $this->pool = $pool;
         $this->driver = $pool->getDriver();
@@ -172,7 +173,7 @@ class Item implements ItemInterface
      * @param array $key        the key to set for this cache item
      * @param string $namespace the namespace for this cache item
      */
-    public function setKey(array $key, $namespace = null)
+    public function setKey(array $key, ?string $namespace = null): void
     {
         $this->namespace = $namespace;
 
@@ -192,7 +193,7 @@ class Item implements ItemInterface
     /**
      * {@inheritdoc}
      */
-    public function disable()
+    public function disable(): bool
     {
         $this->cacheEnabled = false;
 
@@ -202,7 +203,7 @@ class Item implements ItemInterface
     /**
      * {@inheritdoc}
      */
-    public function getKey()
+    public function getKey(): string
     {
         return isset($this->keyString) ? $this->keyString : false;
     }
@@ -210,7 +211,7 @@ class Item implements ItemInterface
     /**
      * {@inheritdoc}
      */
-    public function clear()
+    public function clear(): bool
     {
         try {
             return $this->executeClear();
@@ -242,7 +243,7 @@ class Item implements ItemInterface
      *
      * @return mixed|null
      */
-    public function get()
+    public function get(): mixed
     {
         try {
             if (!isset($this->data)) {
@@ -269,11 +270,11 @@ class Item implements ItemInterface
     /**
      * {@inheritdoc}
      *
-     * @param string $invalidation
+     * @param int $invalidation
      * @param mixed  $arg
      * @param mixed  $arg2
      */
-    public function setInvalidationMethod($invalidation = Invalidation::PRECOMPUTE, $arg = null, $arg2 = null)
+    public function setInvalidationMethod($invalidation = Invalidation::PRECOMPUTE, $arg = null, $arg2 = null): void
     {
         $this->invalidationMethod = $invalidation;
         $this->invalidationArg1 = $arg;
@@ -283,7 +284,7 @@ class Item implements ItemInterface
     /**
      * {@inheritdoc}
      *
-     * @param string $invalidation
+     * @param int $invalidation
      * @param mixed  $arg
      * @param mixed  $arg2
      * @return mixed|Null
@@ -330,7 +331,7 @@ class Item implements ItemInterface
     *
     * @return bool
     */
-    public function isHit()
+    public function isHit(): bool
     {
         return !$this->isMiss();
     }
@@ -340,7 +341,7 @@ class Item implements ItemInterface
      *
      * @return bool
      */
-    public function isMiss()
+    public function isMiss(): bool
     {
         if (!isset($this->isHit)) {
             $this->get();
@@ -357,9 +358,9 @@ class Item implements ItemInterface
      * {@inheritdoc}
      *
      * @param int $ttl time to live
-     * @return object data with new expiration date
+     * @return bool
      */
-    public function lock($ttl = null)
+    public function lock(?int $ttl = null): bool
     {
         if ($this->isDisabled()) {
             return true;
@@ -386,10 +387,10 @@ class Item implements ItemInterface
      * @param mixed $value
      * @return \Stash\Item
      */
-    public function set($value)
+    public function set(mixed $value): static
     {
         if (!isset($this->key)) {
-            return false;
+            throw new ItemKeyMissingException('Item key is missing, cannot save.');
         }
 
         if ($this->isDisabled()) {
@@ -403,18 +404,20 @@ class Item implements ItemInterface
     /**
      * {@inheritdoc}
      *
-     * @param int $ttl time to live
+     * @param int|\DateInterval|\DateTimeInterface|null $ttl time to live
      * @return \Stash\Item
      */
-    public function setTTL($ttl = null)
+    public function setTTL(int|\DateInterval|\DateTimeInterface|null $ttl = null): static
     {
         if (is_numeric($ttl) || ($ttl instanceof \DateInterval)) {
             return $this->expiresAfter($ttl);
-        } elseif (($ttl instanceof \DateTimeInterface) || ($ttl instanceof \DateTime)) {
-            return $this->expiresAt($ttl);
-        } else {
-            $this->expiration = null;
         }
+
+        if (($ttl instanceof \DateTimeInterface)) {
+            return $this->expiresAt($ttl);
+        }
+
+        $this->expiration = null;
         return $this;
     }
 
@@ -424,7 +427,7 @@ class Item implements ItemInterface
      * @throws \Stash\Exception\InvalidArgumentException
      * @return \Stash\Item
      */
-    public function expiresAt($expiration = null)
+    public function expiresAt(int|\DateInterval|\DateTimeInterface|null $expiration = null): static
     {
         if (!is_null($expiration) && !($expiration instanceof \DateTimeInterface)) {
             # For compatbility with PHP 5.4 we also allow inheriting from the DateTime object.
@@ -443,7 +446,7 @@ class Item implements ItemInterface
      * @param int $time date timestamp
      * @return \Stash\Item
      */
-    public function expiresAfter($time)
+    public function expiresAfter(int|\DateInterval|null $time): static
     {
         $date = new \DateTime();
         if (is_numeric($time)) {
@@ -467,7 +470,7 @@ class Item implements ItemInterface
      *
      * @return bool
      */
-    public function save()
+    public function save(): bool
     {
         try {
             return $this->executeSet($this->data, $this->expiration);
@@ -483,10 +486,10 @@ class Item implements ItemInterface
      * {@inheritdoc}
      *
      * @param mixed $data
-     * @param int $time
+     * @param int|\DateTimeInterface|null $time
      * @return bool
      */
-    private function executeSet($data, $time)
+    protected function executeSet(mixed $data, int|\DateTimeInterface|null $time): bool
     {
         if ($this->isDisabled() || !isset($this->key)) {
             return false;
@@ -506,7 +509,7 @@ class Item implements ItemInterface
         $expiration = $store['createdOn'] + $cacheTime;
 
         if ($cacheTime > 0) {
-            $expirationDiff = rand(0, floor($cacheTime * .15));
+            $expirationDiff = random_int(0, floor($cacheTime * .15));
             $expiration -= $expirationDiff;
         }
 
@@ -523,16 +526,34 @@ class Item implements ItemInterface
     /**
      * {@inheritdoc}
      *
-     * @param int $ttl time to live
-     * @return bool
+     * @param int|\DateInterval|null $ttl time to live
+     * @return \Stash\Item|false
      */
-    public function extend($ttl = null)
+    public function extend(int|\DateInterval|null $ttl = null): \Stash\Item|bool
     {
         if ($this->isDisabled()) {
             return false;
         }
 
-        return $this->set($this->get(), $ttl);
+        $expiration = $this->getExpiration();
+
+        if (is_numeric($ttl)) {
+            $dateInterval = \DateInterval::createFromDateString(abs($ttl) . ' seconds');
+            if ($ttl > 0) {
+                $expiration->add($dateInterval);
+            } else {
+                $expiration->sub($dateInterval);
+            }
+        } elseif ($ttl instanceof \DateInterval) {
+            $expiration->add($ttl);
+        } else {
+            $expiration = null;
+        }
+
+        if ($this->executeSet($this->get(), $expiration)) {
+            return $this;
+        }
+        return false;
     }
 
     /**
@@ -540,11 +561,11 @@ class Item implements ItemInterface
      *
      * @return bool
      */
-    public function isDisabled()
+    public function isDisabled(): bool
     {
         return self::$runtimeDisable
                 || !$this->cacheEnabled
-                || (defined('STASH_DISABLE_CACHE') && STASH_DISABLE_CACHE);
+                || (defined('STASH_DISABLE_CACHE') && constant('STASH_DISABLE_CACHE'));
     }
 
     /**
@@ -552,9 +573,10 @@ class Item implements ItemInterface
      *
      * @param \Psr\Log\LoggerInterface
      */
-    public function setLogger($logger)
+    public function setLogger($logger): bool
     {
         $this->logger = $logger;
+        return true;
     }
 
     /**
@@ -564,7 +586,7 @@ class Item implements ItemInterface
      * @param  \Exception $exception
      * @return bool
      */
-    protected function logException($message, $exception)
+    protected function logException(string $message, \Exception $exception): bool
     {
         if (!isset($this->logger)) {
             return false;
@@ -574,7 +596,7 @@ class Item implements ItemInterface
             $message,
             array(
                 'exception' => $exception,
-                 'key' => $this->keyString
+                'key' => $this->keyString
               )
         );
 
@@ -587,7 +609,7 @@ class Item implements ItemInterface
      * @param  array $key
      * @return bool
      */
-    protected function getStampedeFlag($key)
+    protected function getStampedeFlag(array $key): bool
     {
         $key[0] = 'sp'; // change "cache" data namespace to stampede namespace
         $spReturn = $this->driver->getData($key);
@@ -608,7 +630,7 @@ class Item implements ItemInterface
      *
      * @return array
      */
-    protected function getRecord()
+    protected function getRecord(): array
     {
         $record = $this->driver->getData($this->key);
 
@@ -629,7 +651,7 @@ class Item implements ItemInterface
      * @param array $validation
      * @param array &$record
      */
-    protected function validateRecord($validation, &$record)
+    protected function validateRecord(array $validation, array &$record): void
     {
         $invalidation = Invalidation::PRECOMPUTE;
         if (is_array($validation)) {
@@ -681,10 +703,10 @@ class Item implements ItemInterface
                     $this->isHit = false;
 
                     return;
-                } else {
-                    $record['data']['return'] = $arg;
-                    $this->isHit = true;
                 }
+
+                $record['data']['return'] = $arg;
+                $this->isHit = true;
                 break;
 
             case Invalidation::SLEEP:
@@ -715,9 +737,9 @@ class Item implements ItemInterface
     /**
      * {@inheritdoc}
      *
-     * @return \DateTime
+     * @return \DateTime|false
      */
-    public function getCreation()
+    public function getCreation(): \DateTime|bool
     {
         $record = $this->getRecord();
         if (!isset($record['data']['createdOn'])) {
@@ -733,9 +755,9 @@ class Item implements ItemInterface
     /**
      * {@inheritdoc}
      *
-     * @return int date timestamp
+     * @return \DateTime date timestamp
      */
-    public function getExpiration()
+    public function getExpiration(): \DateTime
     {
         if (!isset($this->expiration)) {
             $record = $this->getRecord();

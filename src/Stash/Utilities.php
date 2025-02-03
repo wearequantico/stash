@@ -34,6 +34,10 @@ class Utilities
                 return 'bool';
             }
 
+            if (is_string($data)) {
+                return 'string';
+            }
+
             if (is_numeric($data)) {
                 if (is_numeric($data) && ($data >= 2147483648 || $data < -2147483648)) {
                     return 'serialize';
@@ -41,8 +45,6 @@ class Utilities
                     return 'numeric';
                 }
             }
-
-            return 'string';
         }
 
         return 'serialize';
@@ -98,7 +100,7 @@ class Utilities
      * @param  DriverInterface $driver
      * @return string          Path for Stash files
      */
-    public static function getBaseDirectory(DriverInterface $driver = null)
+    public static function getBaseDirectory(?DriverInterface $driver = null)
     {
         $tmp = rtrim(sys_get_temp_dir(), '/\\') . '/';
 
@@ -209,7 +211,7 @@ class Utilities
      * @throws Exception\RuntimeException
      * @throws Exception\InvalidArgumentException
      */
-    public static function checkFileSystemPermissions($path = null, $permissions)
+    public static function checkFileSystemPermissions($path, int $permissions)
     {
         if (!isset($path)) {
             throw new RuntimeException('Cache path was not set correctly.');
