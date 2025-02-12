@@ -29,6 +29,7 @@ class Redis extends AbstractDriver
      */
     protected $redis;
 
+	protected static $pathPrefix = 'pathdb:';
     /**
      * The cache of indexed keys.
      *
@@ -274,39 +275,45 @@ class Redis extends AbstractDriver
      * @param  bool   $path
      * @return string
      */
-    protected function makeKeyString($key, $path = false)
-    {
-        $key = \Stash\Utilities::normalizeKeys($key);
-
-        $keyString = 'cache:::';
-        $pathKey = ':pathdb::';
-        foreach ($key as $name) {
-            //a. cache:::name
-            //b. cache:::name0:::sub
-            $keyString .= $name;
-
-            //a. :pathdb::cache:::name
-            //b. :pathdb::cache:::name0:::sub
-            $pathKey = ':pathdb::' . $keyString;
-            //custom quantico
-			//$pathKey = md5($pathKey);
-			$pathKey = $pathKey;
-
-            if (isset($this->keyCache[$pathKey])) {
-                $index = $this->keyCache[$pathKey];
-            } else {
-                $index = $this->redis->get($pathKey);
-                $this->keyCache[$pathKey] = $index;
-            }
-
-            //a. cache:::name0:::
-            //b. cache:::name0:::sub1:::
-            $keyString .= '_' . $index . ':::';
-        }
- //custom quantico
-      //  return $path ? $pathKey : md5($keyString);
-        return $path ? $pathKey : $keyString;
-    }
+    protected function makeKeyString($keyParts, $path = false) {
+		 	$keyParts = \Stash\Utilities::normalizeKeys($keyParts,"strtolower");
+		 
+		
+		$keyString = '';
+		foreach ($keyParts as $keyPart) {
+			if ( (strpos($keyPart, ':') || strpos($keyPart, '_'))) {
+				throw new InvalidArgumentException('You cannot use `:` or `_` in keys if key_normalization is off.');
+			}
+			
+			$keyString .= $keyPart;
+			
+			/*
+			 * Check if there is an index available in the pathdb, that means there was a deletion of the stackparent before
+			 * and we should use the index inside the pathdb to as a prefix for the sub-keys.
+			 *
+			 * However if we are generating the path this should not be included since the index will never get higher than 1 then.
+			 */
+			if (!$path) {
+				$pathString = self::$pathPrefix.$keyString;
+				if (isset($this->keyCache[$pathString])) {
+					$index = $this->keyCache[$pathString];
+				}
+				else {
+					$index = $this->redis->get($pathString);
+				}
+				
+				if ($index) {
+					$keyString .= '_'.$index;
+				}
+			}
+			
+			$keyString .= ':';
+		}
+		
+		$keyString = rtrim($keyString, ':');
+		
+		return $path ? self::$pathPrefix.$keyString : $keyString;
+	}
 
     /**
      * {@inheritdoc}
