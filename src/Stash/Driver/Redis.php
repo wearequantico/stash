@@ -232,7 +232,7 @@ class Redis extends AbstractDriver
     /**
      * {@inheritdoc}
      */
-    public function clear($key = null)
+   /* public function clear($key = null)
     {
         if (is_null($key)) {
             $this->redis->flushDB();
@@ -247,7 +247,80 @@ class Redis extends AbstractDriver
         $this->keyCache = array();
 
         return true;
-    }
+    }*/
+
+    public function clear($key = null) {
+		
+		
+        if (is_null($key)) {
+            $this->redis->flushDB();
+            return true;
+        }
+		
+		$keyString = $this->makeKeyString($key); 
+        $this->redis->del($keyString); // remove direct item.
+		
+       
+		/**
+		 * If the key has subkeys that means that we will have to remove them too.
+		 * But first we create a new index for the stackparent in the pathdb so we are sure there will be no new
+		 * subkeys added while we are deleting them.
+		 */
+		//FIX EXPRIMO: Durante lo stampede protection non ha senso controllare le subkeys, evito il controllo per velocizzare
+		if(strpos($keyString, "sp:") === 0 ){
+			return true;
+		} else { 
+			if ($this->hasSubKeys($keyString)) {
+			//$pathString                  = $this->makeKeyString($key, true); 
+			//$this->keyCache[$pathString] = $this->redis->incr($pathString); //Create a new index and save it in the key cache
+			$this->deleteSubKeys($keyString); // remove all the subitems
+		}
+		
+		} 
+		return true;
+	}
+
+
+    
+	/**
+	 * @param $keyString
+	 * @return bool
+	 */
+	protected function hasSubKeys($keyString) {
+		/**
+		 * PHPRedis examples are lying. It will not return a boolean false if there are no keys but it will return an empty array.
+		 * But it will also return an empty array if there are no keys fetched in this iteration even though there are more keys to be fetched
+		 * because there are no guarantees given for that.
+		 * So we will need to check whether there are no keys until the iterator is set to 0 which means the whole space has been traversed.
+		 *
+		 * For more information see @link https://redis.io/commands/scan#number-of-elements-returned-at-every-scan-call
+		 */
+		
+		$iterator   = null;
+		$hasSubKeys = false;
+		while ($iterator !== 0 && $hasSubKeys === false) {
+			$hasSubKeys = $this->redis->scan($iterator, $keyString.':*') !== [];
+		}
+		
+		return $hasSubKeys;
+	}
+	
+	/**
+	 * @param string $keyString
+	 */
+	protected function deleteSubKeys($keyString) {
+		//Make sure the pattern matches with in the separator as the last char or else it will also delete the newly indexed keys
+		$pattern = $keyString.':*';
+		
+		$iterator = null;
+		while ($iterator !== 0) {
+			$subKeys = $this->redis->scan($iterator, $pattern);
+			foreach ($subKeys as $subKey) {
+				$this->redis->del($subKey);
+			}
+		}
+	}
+
 
     /**
      * {@inheritdoc}
