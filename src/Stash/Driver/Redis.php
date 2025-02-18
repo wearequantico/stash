@@ -354,9 +354,9 @@ class Redis extends AbstractDriver
 		
 		$keyString = '';
 		foreach ($keyParts as $keyPart) {
-			if ( (strpos($keyPart, ':') || strpos($keyPart, '_'))) {
+			/*if ( (strpos($keyPart, ':') || strpos($keyPart, '_'))) {
 				throw new InvalidArgumentException('You cannot use `:` or `_` in keys if key_normalization is off.');
-			}
+			}*/
 			
 			$keyString .= $keyPart;
 			
